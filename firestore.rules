@@ -1,0 +1,140 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Default deny all access
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() > 0 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isValidUserProfile(data) {
+      return data.userId is string &&
+             data.userId == request.auth.uid &&
+             data.coinBalance is int &&
+             data.coinBalance >= 0 &&
+             (!('displayName' in data) || (data.displayName is string && data.displayName.size() <= 100)) &&
+             (!('email' in data) || (data.email is string && data.email.size() <= 150)) &&
+             (!('activeThemeId' in data) || (data.activeThemeId is string && data.activeThemeId.size() <= 60)) &&
+             (!('activeLanguage' in data) || (data.activeLanguage is string && data.activeLanguage.size() <= 20)) &&
+             data.createdAt is timestamp &&
+             data.createdAt <= request.time &&
+             data.updatedAt is timestamp &&
+             data.updatedAt <= request.time;
+    }
+
+    function isValidRedemption(data, userId) {
+      return data.id is string &&
+             isValidId(data.id) &&
+             data.userId is string &&
+             data.userId == userId &&
+             data.cardTitle is string &&
+             data.cardTitle.size() > 0 &&
+             data.cardTitle.size() <= 100 &&
+             data.cardValue is string &&
+             data.cardValue.size() > 0 &&
+             data.cardValue.size() <= 50 &&
+             data.code is string &&
+             data.code.size() > 0 &&
+             data.code.size() <= 60 &&
+             data.cost is int &&
+             data.cost >= 0 &&
+             data.createdAt is timestamp &&
+             data.createdAt <= request.time;
+    }
+
+    function isValidCustomTheme(data, userId) {
+      return data.id is string &&
+             isValidId(data.id) &&
+             data.userId is string &&
+             data.userId == userId &&
+             data.name is string &&
+             data.name.size() > 0 &&
+             data.name.size() <= 60 &&
+             data.backgroundColorHex is string &&
+             data.backgroundColorHex.size() <= 20 &&
+             data.keyColorHex is string &&
+             data.keyColorHex.size() <= 20 &&
+             data.textColorHex is string &&
+             data.textColorHex.size() <= 20 &&
+             data.accentColorHex is string &&
+             data.accentColorHex.size() <= 20 &&
+             data.createdAt is timestamp &&
+             data.createdAt <= request.time;
+    }
+
+    // User profile and wallet document
+    match /users/{userId} {
+      allow get: if isOwner(userId);
+
+      allow create: if isOwner(userId) &&
+                       isValidUserProfile(incoming()) &&
+                       incoming().keys().hasAll(['userId', 'coinBalance', 'createdAt', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['userId', 'displayName', 'email', 'coinBalance', 'activeThemeId', 'activeLanguage', 'createdAt', 'updatedAt']);
+
+      allow update: if isOwner(userId) &&
+                       incoming().userId == existing().userId &&
+                       incoming().createdAt == existing().createdAt &&
+                       isValidUserProfile(incoming()) &&
+                       incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'email', 'coinBalance', 'activeThemeId', 'activeLanguage', 'updatedAt']);
+
+      allow delete: if isOwner(userId);
+
+      // Subcollection: Redemptions
+      match /redemptions/{redemptionId} {
+        allow get, list: if isOwner(userId);
+
+        allow create: if isOwner(userId) &&
+                         isValidId(redemptionId) &&
+                         incoming().id == redemptionId &&
+                         isValidRedemption(incoming(), userId) &&
+                         incoming().keys().hasAll(['id', 'userId', 'cardTitle', 'cardValue', 'code', 'cost', 'createdAt']) &&
+                         incoming().keys().hasOnly(['id', 'userId', 'cardTitle', 'cardValue', 'code', 'cost', 'createdAt']);
+
+        allow update: if false;
+        allow delete: if false;
+      }
+
+      // Subcollection: Custom Themes
+      match /custom_themes/{themeId} {
+        allow get, list: if isOwner(userId);
+
+        allow create: if isOwner(userId) &&
+                         isValidId(themeId) &&
+                         incoming().id == themeId &&
+                         isValidCustomTheme(incoming(), userId) &&
+                         incoming().keys().hasAll(['id', 'userId', 'name', 'backgroundColorHex', 'keyColorHex', 'textColorHex', 'accentColorHex', 'createdAt']) &&
+                         incoming().keys().hasOnly(['id', 'userId', 'name', 'backgroundColorHex', 'keyColorHex', 'textColorHex', 'accentColorHex', 'createdAt', 'updatedAt']);
+
+        allow update: if isOwner(userId) &&
+                         isValidId(themeId) &&
+                         incoming().id == existing().id &&
+                         incoming().userId == existing().userId &&
+                         incoming().createdAt == existing().createdAt &&
+                         isValidCustomTheme(incoming(), userId) &&
+                         incoming().diff(existing()).affectedKeys().hasOnly(['name', 'backgroundColorHex', 'keyColorHex', 'textColorHex', 'accentColorHex', 'updatedAt']);
+
+        allow delete: if isOwner(userId) && isValidId(themeId);
+      }
+    }
+  }
+}

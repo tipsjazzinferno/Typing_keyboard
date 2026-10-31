@@ -1,0 +1,6 @@
+{
+  "name": "Minima Keyboard",
+  "description": "Ultra-fast, minimal, privacy-first custom keyboard with themes, gesture shortcuts, predictive emoji, and extension packs.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
